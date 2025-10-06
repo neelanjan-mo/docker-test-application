@@ -1,12 +1,99 @@
+version: "3.9"
+
 services:
   mongo:
     image: mongo:6
     container_name: mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
-    environment:
-      MONGO_INITDB_DATABASE: admin_order_service
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo-init-replica:
+    image: mongo:6
+    container_name: mongo-init-replica
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint:
+      [
+        "bash",
+        "-lc",
+        'mongosh --host mongo:27017 --eval ''rs.initiate({_id:"rs0", members:[{_id:0, host:"mongo:27017"}]})'' || true',
+      ]
+
+  admin:
+    build:
+      context: ./admin-order-service
+      dockerfile: Dockerfile
+    container_name: admin
+    depends_on:
+      mongo:
+        condition: service_started
+      mongo-init-replica:
+        condition: service_completed_successfully
+      catalog:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Mongo (transactions require replicaSet)
+      MONGODB_URI: mongodb://mongo:27017/admin_order_service?replicaSet=rs0
+      MONGODB_DB: admin_order_service
+      # JWT (HS256 only)
+      JWT_ISSUER: order-admin
+      JWT_AUDIENCE: order-api
+      JWT_SECRET: lyUqYJWHkNqx3siH
+      # Catalog integration (internal DNS)
+      CATALOG_BASE_URL: http://catalog:3001
+      CATALOG_API_KEY: wWBAPs2y2ZdVFGtw
+      # Disable bypass in container
+      DEV_BYPASS_CATALOG: "0"
+    expose:
+      - "3000"
+
+  catalog:
+    build:
+      context: ./catalog-service
+      dockerfile: Dockerfile
+    container_name: catalog
+    depends_on:
+      mongo:
+        condition: service_started
+      mongo-init-replica:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # Mongo
+      MONGODB_URI: mongodb://mongo:27017/catalog_service?replicaSet=rs0
+      MONGODB_DB: catalog_service
+      # JWT (HS256 only)
+      JWT_ISSUER: catalog-admin
+      JWT_AUDIENCE: catalog-api
+      JWT_SECRET: S6r89pHTZfwZ9Sgm
+      # S2S key for public endpoints
+      PUBLIC_S2S_KEY: wWBAPs2y2ZdVFGtw
+    expose:
+      - "3001"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gateway
+    depends_on:
+      - admin
+      - catalog
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
 volumes:
   mongo_data:
