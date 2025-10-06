@@ -29,36 +29,6 @@ services:
         'mongosh --host mongo:27017 --eval ''rs.initiate({_id:"rs0", members:[{_id:0, host:"mongo:27017"}]})'' || true',
       ]
 
-  admin:
-    build:
-      context: ./admin-order-service
-      dockerfile: Dockerfile
-    container_name: admin
-    depends_on:
-      mongo:
-        condition: service_started
-      mongo-init-replica:
-        condition: service_completed_successfully
-      catalog:
-        condition: service_started
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      # Mongo (transactions require replicaSet)
-      MONGODB_URI: mongodb://mongo:27017/admin_order_service?replicaSet=rs0
-      MONGODB_DB: admin_order_service
-      # JWT (HS256 only)
-      JWT_ISSUER: order-admin
-      JWT_AUDIENCE: order-api
-      JWT_SECRET: lyUqYJWHkNqx3siH
-      # Catalog integration (internal DNS)
-      CATALOG_BASE_URL: http://catalog:3001
-      CATALOG_API_KEY: wWBAPs2y2ZdVFGtw
-      # Disable bypass in container
-      DEV_BYPASS_CATALOG: "0"
-    expose:
-      - "3000"
-
   catalog:
     build:
       context: ./catalog-service
@@ -81,19 +51,37 @@ services:
       JWT_SECRET: S6r89pHTZfwZ9Sgm
       # S2S key for public endpoints
       PUBLIC_S2S_KEY: wWBAPs2y2ZdVFGtw
-    expose:
-      - "3001"
-
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: gateway
-    depends_on:
-      - admin
-      - catalog
     ports:
-      - "8080:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - "3001:3001"
+
+  admin:
+    build:
+      context: ./admin-order-service
+      dockerfile: Dockerfile
+    container_name: admin
+    depends_on:
+      mongo:
+        condition: service_started
+      mongo-init-replica:
+        condition: service_completed_successfully
+      catalog:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Mongo
+      MONGODB_URI: mongodb://mongo:27017/admin_order_service?replicaSet=rs0
+      MONGODB_DB: admin_order_service
+      # JWT
+      JWT_ISSUER: order-admin
+      JWT_AUDIENCE: order-api
+      JWT_SECRET: lyUqYJWHkNqx3siH
+      # Catalog integration (now via host networking)
+      CATALOG_BASE_URL: http://localhost:3001
+      CATALOG_API_KEY: wWBAPs2y2ZdVFGtw
+      DEV_BYPASS_CATALOG: "0"
+    ports:
+      - "3000:3000"
 
 volumes:
   mongo_data:
