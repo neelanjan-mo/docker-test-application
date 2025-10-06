@@ -2,13 +2,10 @@ import mongoose from "mongoose";
 
 const uri = process.env.MONGODB_URI!;
 const dbName = process.env.MONGODB_DB!;
+if (!uri || !dbName) throw new Error("Missing MONGODB_URI or MONGODB_DB");
 
-if (!uri || !dbName) {
-  throw new Error("Missing MONGODB_URI or MONGODB_DB");
-}
-
+// Global connection promise (Next.js hot-reload safe)
 declare global {
-  // eslint-disable-next-line no-var
   var __mongooseConn: Promise<typeof mongoose> | undefined;
 }
 

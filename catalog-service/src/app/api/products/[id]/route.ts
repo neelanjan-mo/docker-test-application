@@ -12,13 +12,13 @@ export const runtime = "nodejs";
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "products:read");
     await connectToDB();
 
-    const { id } = productIdParam.parse(params);
+    const { id } = productIdParam.parse(await params);
     const doc = await Product.findById(id);
     if (!doc) return NextResponse.json({ error: "NotFound" }, { status: 404 });
 
@@ -35,20 +35,19 @@ export async function GET(
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "products:write");
     await connectToDB();
 
-    const { id } = productIdParam.parse(params);
+    const { id } = productIdParam.parse(await params);
     const updateBody = productUpdateSchema.parse(await req.json());
 
     if (Object.keys(updateBody).length === 0) {
       return NextResponse.json({ error: "EmptyUpdate" }, { status: 400 });
     }
 
-    // Apply $set + bump version atomically
     const doc = await Product.findByIdAndUpdate(
       id,
       { $set: updateBody, $inc: { version: 1 } },
@@ -68,13 +67,13 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "products:write");
     await connectToDB();
 
-    const { id } = productIdParam.parse(params);
+    const { id } = productIdParam.parse(await params);
     const doc = await Product.findByIdAndDelete(id);
     if (!doc) return NextResponse.json({ error: "NotFound" }, { status: 404 });
 

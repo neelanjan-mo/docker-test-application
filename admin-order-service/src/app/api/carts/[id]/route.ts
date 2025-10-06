@@ -13,13 +13,13 @@ export const runtime = "nodejs";
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "carts:read");
     await connectToDB();
 
-    const { id } = cartIdParam.parse(params);
+    const { id } = cartIdParam.parse(await params);
     const doc = await Cart.findById(id);
     if (!doc) return NextResponse.json({ error: "NotFound" }, { status: 404 });
 
@@ -36,22 +36,20 @@ export async function GET(
  */
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "carts:write");
     await connectToDB();
 
-    const { id } = cartIdParam.parse(params);
+    const { id } = cartIdParam.parse(await params);
     const { productId, qty } = cartItemUpsertSchema.parse(await req.json());
 
     const cart = await Cart.findById(id);
     if (!cart) return NextResponse.json({ error: "NotFound" }, { status: 404 });
 
     const items = cart.items as unknown as CartItem[];
-    const idx = items.findIndex(
-      (i: CartItem) => i.productId.toString() === productId
-    );
+    const idx = items.findIndex((i) => i.productId.toString() === productId);
 
     // qty === 0 → remove line if present (idempotent)
     if (qty === 0) {
@@ -68,7 +66,6 @@ export async function PUT(
     let priceSnapshot: number;
 
     if (devBypass) {
-      // local-only fallback when Catalog is not available
       nameSnapshot = `DEV-PRODUCT-${productId.slice(-6)}`;
       priceSnapshot = 99.99;
     } else {
@@ -82,7 +79,7 @@ export async function PUT(
 
     const snapshot: CartItem = {
       // Mongoose will cast string → ObjectId on save
-      // @ts-expect-error cast on save
+      // @ts-expect-error mongoose cast at save time
       productId,
       nameSnapshot,
       priceSnapshot,
@@ -108,17 +105,16 @@ export async function PUT(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "carts:write");
     await connectToDB();
 
-    const { id } = cartIdParam.parse(params);
+    const { id } = cartIdParam.parse(await params);
     const doc = await Cart.findByIdAndDelete(id);
     if (!doc) return NextResponse.json({ error: "NotFound" }, { status: 404 });
 
-    // 204 could be used; returning body aligns with your other handlers
     return NextResponse.json({ ok: true });
   } catch (e) {
     return handleApiError(e);

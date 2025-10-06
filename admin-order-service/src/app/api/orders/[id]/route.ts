@@ -6,22 +6,24 @@ import { handleApiError, requireAdminAuth } from "@/lib/http";
 
 export const runtime = "nodejs";
 
+// Keep a local type that matches your Zod enum
+type OrderStatus = "created" | "confirmed" | "fulfilled" | "cancelled";
+
 /**
  * Read order by id
  * GET /api/orders/:id
  */
 export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdminAuth(req, "orders:read");
+    await requireAdminAuth(_req, "orders:read");
     await connectToDB();
 
-    const { id } = orderIdParam.parse(params);
+    const { id } = orderIdParam.parse(await params);
     const doc = await Order.findById(id);
     if (!doc) return NextResponse.json({ error: "NotFound" }, { status: 404 });
-
     return NextResponse.json(doc);
   } catch (e) {
     return handleApiError(e);
@@ -31,47 +33,46 @@ export async function GET(
 /**
  * Update order status
  * PATCH /api/orders/:id
- * body: { status: 'created' | 'confirmed' | 'fulfilled' | 'cancelled' }
+ * body: { status }
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "orders:write");
     await connectToDB();
 
-    const { id } = orderIdParam.parse(params);
-    const { status } = orderStatusUpdateSchema.parse(await req.json());
+    const { id } = orderIdParam.parse(await params);
+    const parsed = orderStatusUpdateSchema.parse(await req.json());
+    const nextStatus: OrderStatus = parsed.status;
 
-    // Optional: enforce simple transition policy
-    // created -> confirmed -> fulfilled/cancelled
     const current = await Order.findById(id);
     if (!current)
       return NextResponse.json({ error: "NotFound" }, { status: 404 });
 
-    const allowed: Record<string, string[]> = {
+    const allowed: Record<OrderStatus, OrderStatus[]> = {
       created: ["confirmed", "cancelled"],
       confirmed: ["fulfilled", "cancelled"],
       fulfilled: [],
       cancelled: [],
     };
-    const nextAllowed = allowed[current.status] ?? [];
-    if (!nextAllowed.includes(status) && status !== current.status) {
+    const nextAllowed = allowed[current.status as OrderStatus] ?? [];
+    if (
+      !nextAllowed.includes(nextStatus) &&
+      nextStatus !== (current.status as OrderStatus)
+    ) {
       return NextResponse.json(
         {
           error: "InvalidTransition",
-          details: { from: current.status, to: status },
+          details: { from: current.status, to: nextStatus },
         },
         { status: 400 }
       );
     }
 
-    current.status = status as any;
+    current.status = nextStatus;
     await current.save();
-
-    // Hook point: on confirmed, call inventory decrement in Catalog
-    // (intentionally omitted here; wire in when Catalog internal API is ready)
 
     return NextResponse.json(current);
   } catch (e) {
@@ -85,13 +86,13 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAdminAuth(req, "orders:write");
     await connectToDB();
 
-    const { id } = orderIdParam.parse(params);
+    const { id } = orderIdParam.parse(await params);
     const doc = await Order.findByIdAndDelete(id);
     if (!doc) return NextResponse.json({ error: "NotFound" }, { status: 404 });
 
