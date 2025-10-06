@@ -1,6 +1,27 @@
-import { Schema, model, models } from "mongoose";
+import {
+  Schema,
+  model,
+  models,
+  type Types,
+  type Document,
+  type Model,
+} from "mongoose";
 
-const CartItemSchema = new Schema(
+export type CartItem = {
+  productId: Types.ObjectId;
+  nameSnapshot: string;
+  priceSnapshot: number;
+  qty: number;
+};
+
+export interface CartDoc extends Document {
+  customerId: Types.ObjectId;
+  items: CartItem[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const CartItemSchema = new Schema<CartItem>(
   {
     productId: { type: Schema.Types.ObjectId, required: true },
     nameSnapshot: { type: String, required: true },
@@ -10,7 +31,7 @@ const CartItemSchema = new Schema(
   { _id: false }
 );
 
-const CartSchema = new Schema(
+const CartSchema = new Schema<CartDoc>(
   {
     customerId: {
       type: Schema.Types.ObjectId,
@@ -22,4 +43,6 @@ const CartSchema = new Schema(
   },
   { timestamps: true }
 );
-export const Cart = models.Cart ?? model("Cart", CartSchema);
+
+export const Cart: Model<CartDoc> =
+  (models.Cart as Model<CartDoc>) ?? model<CartDoc>("Cart", CartSchema);
